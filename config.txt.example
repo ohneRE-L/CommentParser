@@ -1,0 +1,42 @@
+# Конфигурация системы мониторинга комментариев
+# Скопируйте этот файл в config.txt и замените значения на ваши реальные данные
+# 
+# ВАЖНО: config.txt добавлен в .gitignore и не будет загружен в репозиторий
+# Альтернатива: используйте переменные окружения (см. README.md)
+
+# Включение/выключение парсеров (true/false)
+ENABLE_YOUTUBE=true
+ENABLE_VK=true
+ENABLE_REDDIT=true
+
+# YouTube API
+# Получить ключ: https://console.cloud.google.com/
+YOUTUBE_API_KEY=YOUR_YOUTUBE_API_KEY_HERE
+YOUTUBE_CHANNEL_ID=YOUR_YOUTUBE_CHANNEL_ID_HERE
+
+# VK настройки (через API)
+# Получить токен: https://vk.com/dev
+VK_ACCESS_TOKEN=YOUR_VK_ACCESS_TOKEN_HERE
+VK_GROUP_ID=YOUR_VK_GROUP_ID_HERE
+VK_GROUP_URL=https://vk.com/clubYOUR_GROUP_ID
+
+# Reddit настройки (через API)
+# Создать приложение: https://www.reddit.com/prefs/apps
+REDDIT_CLIENT_ID=YOUR_REDDIT_CLIENT_ID_HERE
+REDDIT_CLIENT_SECRET=YOUR_REDDIT_CLIENT_SECRET_HERE
+REDDIT_USER_AGENT=MyParser/1.0
+REDDIT_SUBREDDITS=python,programming,javascript
+
+# Telegram настройки
+# Получить токен: @BotFather в Telegram
+TELEGRAM_BOT_TOKEN=YOUR_TELEGRAM_BOT_TOKEN_HERE
+TELEGRAM_GROUP_ID=YOUR_TELEGRAM_GROUP_ID_HERE
+
+# ID топиков в Telegram группе
+# Получить ID: откройте сообщение в топике, ID будет в URL
+# Например: https://t.me/c/3133293185/2 -> ID топика = 2
+TELEGRAM_TOPIC_YOUTUBE=2
+TELEGRAM_TOPIC_VK=4
+TELEGRAM_TOPIC_REDDIT=115
+TELEGRAM_TOPIC_ERRORS=624
+

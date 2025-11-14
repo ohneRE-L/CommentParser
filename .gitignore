@@ -1,0 +1,37 @@
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+config.txt
+monitor_state_improved.json
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+dist/
+build/
+.venv/
+venv/
+env/
+ENV/
+
+# Тестовые/временные скрипты
+exhaust_youtube_quota.py
+
+# Браузер профили
+chrome_profile/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Логи (если есть в корне)
+*.log
+
