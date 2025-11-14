@@ -309,7 +309,9 @@ class RedditParser(BaseParser):
         text = data.get('body', '').strip()
         
         created_utc = data.get('created_utc', 0)
-        timestamp = datetime.fromtimestamp(created_utc)
+        # Reddit возвращает timestamp в UTC, поэтому используем timezone.utc
+        from datetime import timezone
+        timestamp = datetime.fromtimestamp(created_utc, tz=timezone.utc).replace(tzinfo=None)
         
         comment_id = data.get('id', '')
         post_id = data.get('link_id', '').replace('t3_', '')

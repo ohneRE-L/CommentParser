@@ -169,6 +169,8 @@ class YouTubeParser(BaseParser):
         self.api_key = api_key
         self.channel_id = channel_id
         self.base_url = "https://www.googleapis.com/youtube/v3"
+        self._uploads_playlist_id = None  # Кэш для uploads playlist ID
+        self._playlist_id_loaded = False  # Флаг, что мы пытались загрузить playlist ID
     
     def is_configured(self) -> bool:
         """Проверяет, настроен ли парсер YouTube"""
@@ -195,32 +197,64 @@ class YouTubeParser(BaseParser):
             self.logger.error(f"Ошибка при получении ID канала: {e}")
             return None
     
+    async def get_uploads_playlist_id(self) -> Optional[str]:
+        """Получает ID плейлиста 'Uploads' канала (кэшируется)"""
+        if self._uploads_playlist_id is None and not self._playlist_id_loaded:
+            self._playlist_id_loaded = True
+            try:
+                # Если channel_id это username, сначала получаем реальный ID
+                channel_id_to_use = self.channel_id
+                if not channel_id_to_use.startswith('UC'):
+                    channel_id_to_use = await self.get_channel_id_by_username(channel_id_to_use)
+                    if channel_id_to_use:
+                        self.channel_id = channel_id_to_use
+                    else:
+                        return None
+                
+                url = f"{self.base_url}/channels"
+                params = {
+                    'part': 'contentDetails',
+                    'id': self.channel_id,
+                    'key': self.api_key
+                }
+                
+                data = await self.make_request_with_retry('GET', url, params=params)
+                if data and data.get('items'):
+                    self._uploads_playlist_id = data['items'][0]['contentDetails']['relatedPlaylists']['uploads']
+                    return self._uploads_playlist_id
+                return None
+            except YouTubeQuotaExceeded:
+                raise
+            except Exception as e:
+                self.logger.error(f"Ошибка при получении uploads playlist ID: {e}")
+                return None
+        return self._uploads_playlist_id
+    
     async def get_video_ids(self, limit: int = 5) -> List[str]:
-        """Получает список ID видео с канала"""
+        """Получает список ID видео с канала через uploads playlist (оптимизировано: 1 единица вместо 100)"""
         if not self.is_configured():
             self.logger.error("YouTube парсер не настроен")
             return []
         
         try:
-            # Если channel_id это username, получаем реальный ID
-            if not self.channel_id.startswith('UC'):
-                self.channel_id = await self.get_channel_id_by_username(self.channel_id)
-                if not self.channel_id:
-                    return []
+            # Получаем ID плейлиста "Uploads" (кэшируется, username обрабатывается внутри)
+            uploads_playlist_id = await self.get_uploads_playlist_id()
+            if not uploads_playlist_id:
+                self.logger.error("Не удалось получить uploads playlist ID")
+                return []
             
-            url = f"{self.base_url}/search"
+            # Используем playlistItems.list вместо search.list (1 единица вместо 100!)
+            url = f"{self.base_url}/playlistItems"
             params = {
-                'part': 'id',
-                'channelId': self.channel_id,
-                'type': 'video',
-                'order': 'date',
+                'part': 'contentDetails',
+                'playlistId': uploads_playlist_id,
                 'maxResults': limit,
                 'key': self.api_key
             }
             
             data = await self.make_request_with_retry('GET', url, params=params)
             if data:
-                video_ids = [item['id']['videoId'] for item in data.get('items', [])]
+                video_ids = [item['contentDetails']['videoId'] for item in data.get('items', [])]
                 return video_ids
             return []
         except YouTubeQuotaExceeded:
@@ -254,12 +288,16 @@ class YouTubeParser(BaseParser):
                             top_comment['publishedAt'].replace('Z', '+00:00')
                         )
                         
+                        # Используем timestamp комментария в секундах для параметра t
+                        comment_timestamp = int(published_at.timestamp())
+                        source_url = f"https://www.youtube.com/watch?v={video_id}&lc={item['id']}&t={comment_timestamp}s"
+                        
                         comment = Comment(
                             author=top_comment['authorDisplayName'],
                             text=top_comment['textDisplay'],
                             source=self.source_name,
                             timestamp=published_at,
-                            source_url=f"https://www.youtube.com/watch?v={video_id}&lc={item['id']}"
+                            source_url=source_url
                         )
                         
                         comments.append(comment)
@@ -272,12 +310,16 @@ class YouTubeParser(BaseParser):
                                     reply_snippet['publishedAt'].replace('Z', '+00:00')
                                 )
                                 
+                                # Используем timestamp комментария в секундах для параметра t
+                                reply_timestamp = int(reply_published_at.timestamp())
+                                reply_source_url = f"https://www.youtube.com/watch?v={video_id}&lc={reply['id']}&t={reply_timestamp}s"
+                                
                                 reply_comment = Comment(
                                     author=reply_snippet['authorDisplayName'],
                                     text=f"↳ {reply_snippet['textDisplay']}",
                                     source=self.source_name,
                                     timestamp=reply_published_at,
-                                    source_url=f"https://www.youtube.com/watch?v={video_id}&lc={reply['id']}"
+                                    source_url=reply_source_url
                                 )
                                 
                                 comments.append(reply_comment)
@@ -301,15 +343,23 @@ class YouTubeParser(BaseParser):
         all_comments = []
         
         try:
+            import time
+            start_time = time.time()
+            
             # Получаем список видео
             video_ids = await self.get_video_ids(limit=20)
+            video_ids_time = time.time() - start_time
             
             if not video_ids:
                 return []
             
             # Параллельно получаем комментарии ко всем видео
+            comments_start_time = time.time()
             tasks = [self.get_video_comments(video_id, limit=30) for video_id in video_ids]
             results = await asyncio.gather(*tasks, return_exceptions=True)
+            comments_time = time.time() - comments_start_time
+            
+            self.logger.debug(f"YouTube: получение списка видео: {video_ids_time:.2f}с, комментарии: {comments_time:.2f}с")
             
             # Обрабатываем результаты
             for i, result in enumerate(results):

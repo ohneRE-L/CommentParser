@@ -563,15 +563,22 @@ class CommentMonitor:
         
         known_comments = set()
         for comment in last_comments:
-            # Для всех парсеров используем одинаковую логику: author + text + source_url
-            # source_url содержит уникальный ID комментария
-            key = f"{comment.author}_{comment.text}_{comment.source_url}"
+            # Для YouTube используем только source_url (содержит уникальный ID комментария)
+            # Для других парсеров используем author + text + source_url
+            if parser_name == "YouTube":
+                key = comment.source_url
+            else:
+                key = f"{comment.author}_{comment.text}_{comment.source_url}"
             known_comments.add(key)
         
         new_comments = []
         for comment in filtered_comments:
-            # Для всех парсеров используем одинаковую логику: author + text + source_url
-            key = f"{comment.author}_{comment.text}_{comment.source_url}"
+            # Для YouTube используем только source_url (содержит уникальный ID комментария)
+            # Для других парсеров используем author + text + source_url
+            if parser_name == "YouTube":
+                key = comment.source_url
+            else:
+                key = f"{comment.author}_{comment.text}_{comment.source_url}"
             
             if key not in known_comments:
                 new_comments.append(comment)
@@ -581,6 +588,10 @@ class CommentMonitor:
             self.logger.info(f"{parser_name}: {len(new_comments)} новых комментариев (всего: {len(current_comments)}, после запуска: {len(filtered_comments)})")
         elif len(filtered_comments) > 0:
             self.logger.debug(f"{parser_name}: новых комментариев нет (всего: {len(current_comments)}, после запуска: {len(filtered_comments)})")
+        elif len(current_comments) > 0:
+            # Комментарии найдены, но все отфильтрованы по времени
+            skipped = len(current_comments) - len(filtered_comments)
+            self.logger.info(f"{parser_name}: найдено {len(current_comments)} комментариев, все отфильтрованы по времени (пропущено: {skipped})")
         else:
             self.logger.debug(f"{parser_name}: комментариев не найдено")
         
