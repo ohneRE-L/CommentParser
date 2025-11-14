@@ -362,7 +362,7 @@ class TelegramSender:
             return
         
         topic_id = self.topics.get('Errors')
-        self.logger.info(f"Отправка ошибки в Telegram. Парсер: {parser_name}, Топик: {topic_id}")
+        self.logger.debug(f"Отправка ошибки в Telegram. Парсер: {parser_name}, Топик: {topic_id}")
         
         # Форматируем сообщение об ошибке
         message = "⚠️ <b>ОШИБКА ПАРСЕРА</b>\n\n"
@@ -468,8 +468,7 @@ class CommentMonitor:
         # Используем UTC для единообразия с комментариями из API
         from datetime import timezone as tz
         self.parser_start_time = datetime.now(tz.utc).replace(tzinfo=None)
-        self.logger.info(f"Запуск парсера. Время запуска (UTC): {self.parser_start_time.strftime('%Y-%m-%d %H:%M:%S')}")
-        self.logger.info(f"Комментарии, написанные до {self.parser_start_time.strftime('%Y-%m-%d %H:%M:%S')} UTC, не будут отправляться")
+        self.logger.info(f"Время запуска парсера: {self.parser_start_time.strftime('%Y-%m-%d %H:%M:%S')} UTC")
         
         # Загружаем состояние (комментарии, но не время запуска)
         self.load_state()
@@ -477,10 +476,10 @@ class CommentMonitor:
         # Определяем, первый ли это запуск (если нет сохраненных комментариев)
         if not self.last_comments:
             self.first_run = True
-            self.logger.info("Первый запуск: нет сохраненных комментариев")
+            self.logger.debug("Первый запуск: нет сохраненных комментариев")
         else:
             self.first_run = False
-            self.logger.info(f"Загружено состояние для {len(self.last_comments)} парсеров")
+            self.logger.debug(f"Загружено состояние для {len(self.last_comments)} парсеров")
     
     def get_configured_parsers(self) -> List:
         """Возвращает список настроенных парсеров"""
@@ -492,7 +491,7 @@ class CommentMonitor:
                 SOCIAL_NETWORKS['youtube']['channel_id']
             )
             parsers.append(youtube_parser)
-            self.logger.info("YouTube парсер добавлен")
+            self.logger.debug("YouTube парсер добавлен")
         
         if SOCIAL_NETWORKS['vk']['enabled'] and SOCIAL_NETWORKS['vk']['access_token'] and SOCIAL_NETWORKS['vk']['group_id']:
             vk_parser = create_vk_parser(
@@ -501,7 +500,7 @@ class CommentMonitor:
                 SOCIAL_NETWORKS['vk']['group_url']
             )
             parsers.append(vk_parser)
-            self.logger.info("VK парсер добавлен")
+            self.logger.debug("VK парсер добавлен")
         
         if SOCIAL_NETWORKS['reddit']['enabled'] and SOCIAL_NETWORKS['reddit']['client_id'] and SOCIAL_NETWORKS['reddit']['client_secret']:
             for subreddit in SOCIAL_NETWORKS['reddit']['subreddits']:
@@ -514,7 +513,7 @@ class CommentMonitor:
                         subreddit
                     )
                     parsers.append(reddit_parser)
-                    self.logger.info(f"Reddit парсер для r/{subreddit} добавлен")
+                    self.logger.debug(f"Reddit парсер для r/{subreddit} добавлен")
         
         return parsers
     
@@ -544,28 +543,20 @@ class CommentMonitor:
                     filtered_comments.append(comment)
                 else:
                     skipped_before_start += 1
-                    # Для YouTube логируем комментарии, которые близки к времени запуска (в пределах 5 минут)
-                    time_diff = (self.parser_start_time - comment_time).total_seconds()
-                    if parser_name == "YouTube" and time_diff < 300:  # 5 минут
-                        self.logger.info(f"{parser_name}: пропущен комментарий от {comment.author} (время: {comment_time.strftime('%Y-%m-%d %H:%M:%S')}, запуск парсера: {self.parser_start_time.strftime('%Y-%m-%d %H:%M:%S')}, разница: {time_diff:.0f}с)")
-                    else:
-                        self.logger.debug(f"{parser_name}: пропущен комментарий от {comment.author} (время: {comment_time.strftime('%Y-%m-%d %H:%M:%S')}, запуск парсера: {self.parser_start_time.strftime('%Y-%m-%d %H:%M:%S')})")
             except Exception as e:
                 # Если ошибка при сравнении, пропускаем комментарий
-                self.logger.warning(f"{parser_name}: ошибка сравнения времени комментария: {e}, пропускаем комментарий")
+                self.logger.warning(f"{parser_name}: ошибка сравнения времени комментария: {e}")
                 skipped_before_start += 1
         
-        if skipped_before_start > 0:
-            self.logger.info(f"{parser_name}: пропущено {skipped_before_start} комментариев, написанных до запуска парсера ({self.parser_start_time.strftime('%Y-%m-%d %H:%M:%S')})")
-        
         if self.first_run:
-            self.logger.info(f"Первый запуск: пропускаем отправку старых комментариев для {parser_name}")
+            if skipped_before_start > 0:
+                self.logger.debug(f"{parser_name}: пропущено {skipped_before_start} старых комментариев (первый запуск)")
             return []
         
         # Если парсера нет в last_comments, считаем что это первый запуск для этого парсера
-        # и не отправляем комментарии (чтобы избежать дублирования)
         if parser_name not in self.last_comments:
-            self.logger.info(f"{parser_name}: первый запуск парсера, пропускаем комментарии")
+            if skipped_before_start > 0:
+                self.logger.debug(f"{parser_name}: пропущено {skipped_before_start} старых комментариев (первый запуск парсера)")
             return []
         
         last_comments = self.last_comments[parser_name]
@@ -577,8 +568,6 @@ class CommentMonitor:
             key = f"{comment.author}_{comment.text}_{comment.source_url}"
             known_comments.add(key)
         
-        self.logger.debug(f"{parser_name}: в базе {len(known_comments)} известных комментариев")
-        
         new_comments = []
         for comment in filtered_comments:
             # Для всех парсеров используем одинаковую логику: author + text + source_url
@@ -586,10 +575,15 @@ class CommentMonitor:
             
             if key not in known_comments:
                 new_comments.append(comment)
-            else:
-                self.logger.debug(f"{parser_name}: пропущен уже обработанный комментарий от {comment.author}")
         
-        self.logger.info(f"{parser_name}: найдено {len(current_comments)} комментариев ({len(filtered_comments)} после запуска), {len(new_comments)} новых (в базе: {len(known_comments)})")
+        # Логируем только важную информацию
+        if new_comments:
+            self.logger.info(f"{parser_name}: {len(new_comments)} новых комментариев (всего: {len(current_comments)}, после запуска: {len(filtered_comments)})")
+        elif len(filtered_comments) > 0:
+            self.logger.debug(f"{parser_name}: новых комментариев нет (всего: {len(current_comments)}, после запуска: {len(filtered_comments)})")
+        else:
+            self.logger.debug(f"{parser_name}: комментариев не найдено")
+        
         return new_comments
     
     def format_report(self, parser_name, new_comments):
@@ -658,11 +652,10 @@ class CommentMonitor:
                     report = self.format_report(parser_name, new_comments)
                     if report:
                         print(report)
-                        self.logger.info(f"{parser_name}: найдено {len(new_comments)} новых комментариев")
                 
                 self.save_last_comments(parser_name, comments)
             else:
-                self.logger.info(f"{parser_name}: комментариев не найдено")
+                self.logger.debug(f"{parser_name}: комментариев не найдено")
                 self.save_last_comments(parser_name, [])
                 
         except YouTubeQuotaExceeded as e:
@@ -674,12 +667,10 @@ class CommentMonitor:
             result['error'] = error_msg
             
             # Отправляем ошибку в топик ошибок Telegram
-            self.logger.info(f"Вызываю send_error для парсера {parser_name}")
             try:
                 await self.telegram_sender.send_error(error_msg, parser_name=parser_name)
-                self.logger.info(f"send_error завершен для парсера {parser_name}")
             except Exception as send_err:
-                self.logger.error(f"ОШИБКА при вызове send_error: {send_err}")
+                self.logger.error(f"Ошибка при отправке ошибки в Telegram: {send_err}")
             
             # Выводим сообщение в консоль
             print(f"\n⚠️ {parser_name}: {error_msg}\n")
@@ -698,7 +689,6 @@ class CommentMonitor:
     
     async def check_parsers(self):
         """Проверяет все парсеры ПАРАЛЛЕЛЬНО"""
-        self.logger.info("Проверяю парсеры...")
         self.stats['total_checks'] += 1
         
         if not self.parsers:
