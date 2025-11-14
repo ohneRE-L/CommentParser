@@ -465,9 +465,11 @@ class CommentMonitor:
         
         # Время запуска парсера - комментарии до этого времени не отправляются
         # ВСЕГДА устанавливаем текущее время при запуске (не загружаем из файла)
-        self.parser_start_time = datetime.now()
-        self.logger.info(f"Запуск парсера. Время запуска: {self.parser_start_time.strftime('%Y-%m-%d %H:%M:%S')}")
-        self.logger.info(f"Комментарии, написанные до {self.parser_start_time.strftime('%Y-%m-%d %H:%M:%S')}, не будут отправляться")
+        # Используем UTC для единообразия с комментариями из API
+        from datetime import timezone as tz
+        self.parser_start_time = datetime.now(tz.utc).replace(tzinfo=None)
+        self.logger.info(f"Запуск парсера. Время запуска (UTC): {self.parser_start_time.strftime('%Y-%m-%d %H:%M:%S')}")
+        self.logger.info(f"Комментарии, написанные до {self.parser_start_time.strftime('%Y-%m-%d %H:%M:%S')} UTC, не будут отправляться")
         
         # Загружаем состояние (комментарии, но не время запуска)
         self.load_state()
@@ -518,6 +520,8 @@ class CommentMonitor:
     
     def save_last_comments(self, parser_name: str, comments: List[Comment]):
         """Сохраняет последние комментарии для парсера"""
+        # Сохраняем все комментарии для дедупликации (включая старые)
+        # Фильтрация по времени запуска происходит в get_new_comments
         self.last_comments[parser_name] = comments[:100]
     
     def get_new_comments(self, parser_name: str, current_comments: List[Comment]) -> List[Comment]:
@@ -540,7 +544,12 @@ class CommentMonitor:
                     filtered_comments.append(comment)
                 else:
                     skipped_before_start += 1
-                    self.logger.debug(f"{parser_name}: пропущен комментарий от {comment.author} (время: {comment_time.strftime('%Y-%m-%d %H:%M:%S')}, запуск парсера: {self.parser_start_time.strftime('%Y-%m-%d %H:%M:%S')})")
+                    # Для YouTube логируем комментарии, которые близки к времени запуска (в пределах 5 минут)
+                    time_diff = (self.parser_start_time - comment_time).total_seconds()
+                    if parser_name == "YouTube" and time_diff < 300:  # 5 минут
+                        self.logger.info(f"{parser_name}: пропущен комментарий от {comment.author} (время: {comment_time.strftime('%Y-%m-%d %H:%M:%S')}, запуск парсера: {self.parser_start_time.strftime('%Y-%m-%d %H:%M:%S')}, разница: {time_diff:.0f}с)")
+                    else:
+                        self.logger.debug(f"{parser_name}: пропущен комментарий от {comment.author} (время: {comment_time.strftime('%Y-%m-%d %H:%M:%S')}, запуск парсера: {self.parser_start_time.strftime('%Y-%m-%d %H:%M:%S')})")
             except Exception as e:
                 # Если ошибка при сравнении, пропускаем комментарий
                 self.logger.warning(f"{parser_name}: ошибка сравнения времени комментария: {e}, пропускаем комментарий")
@@ -563,23 +572,24 @@ class CommentMonitor:
         
         known_comments = set()
         for comment in last_comments:
-            if parser_name == "VK" or parser_name.startswith("Reddit"):
-                key = f"{comment.author}_{comment.text}_{comment.source_url}"
-            else:
-                key = f"{comment.text}_{comment.timestamp.timestamp()}"
+            # Для всех парсеров используем одинаковую логику: author + text + source_url
+            # source_url содержит уникальный ID комментария
+            key = f"{comment.author}_{comment.text}_{comment.source_url}"
             known_comments.add(key)
+        
+        self.logger.debug(f"{parser_name}: в базе {len(known_comments)} известных комментариев")
         
         new_comments = []
         for comment in filtered_comments:
-            if parser_name == "VK" or parser_name.startswith("Reddit"):
-                key = f"{comment.author}_{comment.text}_{comment.source_url}"
-            else:
-                key = f"{comment.text}_{comment.timestamp.timestamp()}"
+            # Для всех парсеров используем одинаковую логику: author + text + source_url
+            key = f"{comment.author}_{comment.text}_{comment.source_url}"
             
             if key not in known_comments:
                 new_comments.append(comment)
+            else:
+                self.logger.debug(f"{parser_name}: пропущен уже обработанный комментарий от {comment.author}")
         
-        self.logger.info(f"{parser_name}: найдено {len(current_comments)} комментариев ({len(filtered_comments)} после запуска), {len(new_comments)} новых")
+        self.logger.info(f"{parser_name}: найдено {len(current_comments)} комментариев ({len(filtered_comments)} после запуска), {len(new_comments)} новых (в базе: {len(known_comments)})")
         return new_comments
     
     def format_report(self, parser_name, new_comments):

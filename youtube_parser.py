@@ -262,8 +262,7 @@ class YouTubeParser(BaseParser):
                             source_url=f"https://www.youtube.com/watch?v={video_id}&lc={item['id']}"
                         )
                         
-                        if self.is_new_comment(comment):
-                            comments.append(comment)
+                        comments.append(comment)
                         
                         if 'replies' in item and 'comments' in item['replies']:
                             for reply in item['replies']['comments']:
@@ -281,8 +280,7 @@ class YouTubeParser(BaseParser):
                                     source_url=f"https://www.youtube.com/watch?v={video_id}&lc={reply['id']}"
                                 )
                                 
-                                if self.is_new_comment(reply_comment):
-                                    comments.append(reply_comment)
+                                comments.append(reply_comment)
                 except Exception as e:
                     self.logger.error(f"Ошибка обработки комментариев YouTube: {e}")
             
