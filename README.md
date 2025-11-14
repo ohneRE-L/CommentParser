@@ -16,8 +16,8 @@
 ## Установка и настройка
 
 ### Шаг 1: Распаковка архива
-1. Скачайте архив `comment-monitor.zip`
-2. Распакуйте в любую папку (например, `C:\comment-monitor\` или `/home/user/comment-monitor/`)
+1. Скачайте архив `CommentParser.zip` https://github.com/ohneRE-L/CommentParser/releases
+2. Распакуйте в любую папку (например, `C:\CommentParser\` или `/home/user/CommentParser/`)
 3. Откройте папку в проводнике
 
 ### Шаг 2: Установка Python
